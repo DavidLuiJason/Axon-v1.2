@@ -272,9 +272,43 @@ app.post('/api/ai/chat', async (req, res) => {
           // Fall through to offline response
         }
       }
+      const lastUserMsg = (messages[messages.length - 1]?.text || '').trim();
+      const norm = lastUserMsg.toLowerCase();
+
+      // Greetings
+      if (/^(?:hello|hi|hey|greetings|good morning|good afternoon|good evening)\b/i.test(norm)) {
+        return res.json({
+          success: true,
+          text: 'Hello! I am AXON, running via my on-device local core. I am fully responsive and ready to assist you offline.\n\nI can help you plan features, run deterministic math calculations, search project notes and timeline activity, or execute scripts in the Run Code workspace.',
+        });
+      }
+
+      // Feature status inquiries
+      if (norm.includes('functional') || norm.includes('feature') || norm.includes('working') || norm.includes('status')) {
+        return res.json({
+          success: true,
+          text: 'I am running via AXON Local Core. On-device capabilities (dual-pane workspace, planning engine, project notes, timeline activity search, offline math, storage manifest, and script execution) are fully functional.',
+        });
+      }
+
+      // Calculations / math
+      const mathMatch = lastUserMsg.match(/^[\d\s\+\-\*\/\(\)\.\^\%]+$/);
+      if (mathMatch) {
+        try {
+          const sanitized = lastUserMsg.replace(/[^0-9+\-*/().]/g, '');
+          const val = Function(`"use strict"; return (${sanitized})`)();
+          return res.json({
+            success: true,
+            text: `**Calculation Result**: \`${val}\`\n\nEvaluated deterministically via AXON Local Core.`,
+          });
+        } catch (e) {
+          // Fall through
+        }
+      }
+
       return res.json({
         success: true,
-        text: 'I am running via AXON Local Core. Offline utilities, system notes, and workspace tools are ready.',
+        text: `I have received and processed your inquiry ("${lastUserMsg.slice(0, 80)}") using AXON Local Core in offline mode.\n\nWorkspace tools, deterministic calculations, project notes, and timeline logging are active. Let me know if you would like me to structure a step-by-step plan or draft a note for this workspace.`,
       });
     }
 

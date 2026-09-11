@@ -79,7 +79,7 @@ import {
   synthesizeExecutiveSummary,
   triggerFileDownload,
 } from '../lib/projectMemory';
-import { axonBrain } from '../lib/axonBrain';
+import { axonBrain, BrainProcessResult } from '../lib/axonBrain';
 import { buildCapabilityRegistry, CapabilityRegistry } from '../lib/capabilityRegistry';
 import {
   DEFAULT_PROJECT_ACTIVITIES,
@@ -743,7 +743,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (saved) {
         const parsed: AppStateData = JSON.parse(saved);
         if (parsed.settings?.aiAccounts && parsed.settings.aiAccounts.length > 0) {
-          return parsed.settings.aiAccounts;
+          return parsed.settings.aiAccounts.filter((a) => a.provider !== 'axon');
         }
       }
     } catch (e) {}
@@ -755,7 +755,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
         const parsed: AppStateData = JSON.parse(saved);
-        if (parsed.settings?.activeModelId) {
+        if (parsed.settings?.activeModelId && parsed.settings.activeModelId !== 'axon-offline-core') {
           return parsed.settings.activeModelId;
         }
       }
@@ -1832,9 +1832,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const nextMessages = [...messages, userMsg];
     setMessages(nextMessages);
 
+    let currentBrainResult: BrainProcessResult | null = null;
+
     // AXON Brain Core — Central intelligence processing pipeline (Phase 0 Scaffold)
     try {
-      const brainResult = await axonBrain.processRequest({
+      currentBrainResult = await axonBrain.processRequest({
         id: userMsg.id,
         text,
         projectId: activeProjectId,
@@ -1847,6 +1849,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           capabilityRegistry,
         },
       });
+      const brainResult = currentBrainResult;
 
       // Record activity in project timeline
       if (brainResult?.activityEvent) {
@@ -2036,7 +2039,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       aiAccounts.find((a) => a.provider === activeModel.provider);
 
     // Usage-limit awareness: Stop if account is in cooldown (Strict rule: DO NOT auto-switch)
-    if (currentAccount && isAccountInCooldown(currentAccount)) {
+    // AXON local core is ONE unified intelligence and is strictly excluded from usage limits and cooldowns
+    if (currentAccount && currentAccount.provider !== 'axon' && isAccountInCooldown(currentAccount)) {
       const remaining = getRemainingCooldownString(currentAccount);
       setMessages((prev) => [
         ...prev,
@@ -2268,16 +2272,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         },
       ]);
     } catch (err) {
-      // Offline fallback
+      // Offline mode: process request with AXON's local/offline reasoning core
+      const offlineReply = axonBrain.generateOfflineResponse(
+        {
+          id: userMsg.id,
+          text,
+          projectId: activeProjectId,
+          attachment,
+          context: {
+            conversationHistory: nextMessages,
+            projectNotes: activeProjectNotes,
+            systemContext: activeProject?.systemContext || '',
+            timelineEvents: projectActivities,
+            capabilityRegistry,
+          },
+        },
+        currentBrainResult || undefined
+      );
+
       setMessages((prev) => [
         ...prev,
         {
-          id: `msg-${Date.now()}-fallback`,
+          id: `msg-${Date.now()}-local`,
           sender: 'axon',
-          text: `I am currently running in offline mode. To interact with ${activeModel.name}, ensure your network is connected and your official API key is configured in Settings.`,
+          text: offlineReply,
           projectId: activeProjectId,
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          modelUsed: 'AXON Offline Fallback',
+          modelUsed: 'AXON Local Core',
         },
       ]);
     } finally {
@@ -2676,10 +2697,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           setNotificationsEnabled(parsed.settings.notificationsEnabled);
         }
         if (Array.isArray(parsed.settings.aiAccounts)) {
-          setAiAccounts(parsed.settings.aiAccounts);
+          setAiAccounts(parsed.settings.aiAccounts.filter((a) => a.provider !== 'axon'));
         }
         if (parsed.settings.activeModelId) {
-          setActiveModelId(parsed.settings.activeModelId);
+          setActiveModelId(
+            parsed.settings.activeModelId === 'axon-offline-core'
+              ? 'gemini-3.8-flash'
+              : parsed.settings.activeModelId
+          );
         }
         if (parsed.settings.codeSkillLevel) {
           setCodeSkillLevel(parsed.settings.codeSkillLevel);

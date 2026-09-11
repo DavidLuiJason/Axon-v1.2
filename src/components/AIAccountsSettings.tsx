@@ -66,11 +66,6 @@ export const AIAccountsSettings: React.FC = () => {
   // Account activation / switching
   const handleSelectAccount = async (account: AIAccount) => {
     const res = await switchAccount(account.label, account.provider);
-    if (account.provider === 'gemini') {
-      if (activeModelId === 'axon-offline-core') {
-        setActiveModelId('gemini-2.5-flash');
-      }
-    }
     if (res.success) {
       showToast(`Switched to ${account.label}`);
     }
